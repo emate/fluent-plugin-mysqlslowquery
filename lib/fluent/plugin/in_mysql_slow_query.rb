@@ -17,7 +17,7 @@ require "myslog"
 
 module Fluent
 
-class MySQLSlowQueryInput < TailInput
+class MySQLSlowQueryInput < NewTailInput
   Plugin.register_input('mysql_slow_query', self)
 
   def configure_parser(conf)
