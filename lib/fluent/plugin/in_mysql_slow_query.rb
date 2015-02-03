@@ -17,51 +17,55 @@ require "myslog"
 
 module Fluent
 
-class MySQLSlowQueryInput < NewTailInput
-  Plugin.register_input('mysql_slow_query', self)
+  class MySQLSlowQueryInput < TailInput
+    Plugin.register_input('mysql_slow_query', self)
 
-  def configure_parser(conf)
-    @parser = MySlog.new
-  end
+    @last_use_database = nil
 
-  def search_last_use_database
-    last_use_query = File.open(@path).grep(/^use /).last
-    if last_use_query
-      last_use_database = last_use_query.match(/^use ([^;]+)/)
-      @last_use_database = last_use_database[1] if last_use_database
-      return @last_use_database
+    def configure_parser(conf)
+      @parser = MySlog.new
     end
-  end
 
-  def receive_lines(lines)
-    es = MultiEventStream.new
-    @parser.divide(lines).each do |record|
-      begin
-        record = @parser.parse_record(record)
-        if time = record.delete(:date)
-          time = time.to_i
-        else
-          time = Time.now.to_i
-        end
-
-        if record[:db].nil? || record[:db].empty?
-          record[:db] = @last_use_database ? @last_use_database : search_last_use_database()
-        end
-
-        es.add(time, record)
-      rescue
-        $log.warn record, :error=>$!.to_s
-        $log.debug_backtrace
+    def search_last_use_database
+      last_use_query = File.open(@path).grep(/^use /).last
+      if last_use_query
+        last_use_database = last_use_query.match(/^use ([^;]+)/)
+        @last_use_database = last_use_database[1] if last_use_database
+        return @last_use_database
       end
     end
 
-    unless es.empty?
-      begin
-        Engine.emit_stream(@tag, es)
-      rescue
+    def receive_lines(lines)
+      es = MultiEventStream.new
+      @parser.divide(lines).each do |record|
+        begin
+          record = @parser.parse_record(record)
+          if time = record.delete(:date)
+            time = time.to_i
+          else
+            time = Time.now.to_i
+          end
+
+          if record[:db].nil? || record[:db].empty?
+            record[:db] = @last_use_database
+          else
+            @last_use_database = record[:db]
+          end
+
+          es.add(time, record)
+        rescue
+          $log.warn record, :error=>$!.to_s
+          $log.debug_backtrace
+        end
+      end
+
+      unless es.empty?
+        begin
+          Engine.emit_stream(@tag, es)
+        rescue
+        end
       end
     end
   end
-end
 
 end
